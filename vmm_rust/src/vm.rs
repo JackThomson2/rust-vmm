@@ -64,6 +64,12 @@ unsafe fn setup_kvm_data_segment_long_mode(segment: &mut kvm_segment) {
 }
 
 unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> {
+    let mut regs = kvm_regs::default();
+    check_libc!(ioctl(vcpu, KVM_GET_REGS(), &mut regs), "KVM GET REGS");
+    regs.rip = 0;
+    regs.rflags = 0x2;
+    check_libc!(ioctl(vcpu, KVM_SET_REGS(), &mut regs), "KVM SET REGS");
+
     let mut sregs = kvm_sregs::default();
     check_libc!(ioctl(vcpu, KVM_GET_SREGS(), &mut sregs), "KVM GET SREGS");
 
@@ -85,12 +91,6 @@ unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> 
     setup_kvm_data_segment_long_mode(&mut sregs.es);
 
     setup_long_4level_paging(memory_location);
-
-    let mut regs = kvm_regs::default();
-    regs.rip = 0;
-    regs.rflags = 0x2;
-
-    check_libc!(ioctl(vcpu, KVM_SET_REGS(), &mut regs), "KVM SET REGS");
 
     sregs.cr3 = 0x0;
     sregs.cr0 = CR0_PG | CR0_PE;
@@ -197,7 +197,7 @@ impl Vm {
                     break;
                 },
                 KVM_EXIT_IO => {
-                    println!("PORTIO exiit");
+                    // println!("PORTIO exiit");
                     handle_pio(run_ref, self.get_driver_ref());
                 },
                 KVM_EXIT_MMIO => {

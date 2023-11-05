@@ -47,19 +47,17 @@ unsafe fn get_io_buffer(run: &mut kvm_run) -> &mut [u8] {
     let result_head = root_ptr.add(io.data_offset as usize);
     let size = (io.count as u64) * (io.size as u64);
 
-    println!("IO buffer of {size}");
+    // println!("IO buffer of {size}");
 
     std::slice::from_raw_parts_mut(result_head, size as usize)
 }
 
 unsafe fn com1_pio_in(run: &mut kvm_run, driver: &mut dyn Driver) {
-    println!("Port In");
     let buffer = get_io_buffer(run);
     driver.read_to_buffer(buffer);
 }
 
 unsafe fn com1_pio_out(run: &mut kvm_run, driver: &mut dyn Driver) {
-    println!("Port out");
     let buffer = get_io_buffer(run);
     driver.write_to_buffer(buffer);
 }
