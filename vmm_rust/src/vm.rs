@@ -122,6 +122,9 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     w(0x3008, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x5000);
     w(0x3010, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x6000);
     w(0x3018, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
+
+    // Map into our MMIO region!
+    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0xB000);
 }
 
 impl Vm {
@@ -201,7 +204,6 @@ impl Vm {
                     handle_pio(run_ref, self.get_driver_ref());
                 },
                 KVM_EXIT_MMIO => {
-                    println!("MMIO exit");
                     handle_mmio(run_ref, self.get_driver_ref());
                 },
                 _ => {
