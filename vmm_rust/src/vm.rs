@@ -124,7 +124,8 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     w(0x3018, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
 
     // Map into our MMIO region!
-    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0xB000);
+    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
+    w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
 }
 
 impl Vm {

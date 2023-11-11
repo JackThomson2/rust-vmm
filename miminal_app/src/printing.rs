@@ -2,53 +2,70 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 use core::fmt;
 
-lazy_static! {
-    pub static ref WRITER: Writer = Writer {};
-}
-
+pub const WRITER: Writer = Writer {};
 
 pub struct Writer();
 
 impl Writer {
     pub fn write_string(&self, data: &str) {
         unsafe {
-            // let mmio_location = 0x4000 as *mut u8;
+            let mmio_location = 0x4000 as *mut u8;
 
-            // for letter in data.as_bytes().chunks(8) {
-            //     core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
-            // }
+            for letter in data.as_bytes().chunks(8) {
+                core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
+            }
         }
     }
 }
 
-impl fmt::Write for Writer {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        self.write_string(s);
-        Ok(())
+pub fn write_bytes(data: &[u8]) {
+    unsafe {
+        let mmio_location = 0x4000 as *mut u8;
+
+        for letter in data.chunks(8) {
+            core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
+        }
     }
 }
 
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::printing::_print(format_args!($($arg)*)));
+pub fn write_string(data: &str) {
+    unsafe {
+        let mmio_location = 0x4000 as *mut u8;
+
+        for letter in data.as_bytes().chunks(8) {
+            core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
+        }
+    }
 }
 
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
+// impl fmt::Write for Writer {
+//     fn write_str(&mut self, s: &str) -> fmt::Result {
+//         self.write_string(s);
+//         Ok(())
+//     }
+// }
 
-#[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
-     let mmio_location = 0x4000 as *mut u8;
+// #[macro_export]
+// macro_rules! print {
+//     ($($arg:tt)*) => ($crate::printing::_print(format_args!($($arg)*)));
+// }
 
-     for letter in data.as_bytes().chunks(8) {
-         core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
-     }
+// #[macro_export]
+// macro_rules! println {
+//     () => ($crate::print!("\n"));
+//     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
+// }
+
+// #[doc(hidden)]
+// pub fn _print(args: fmt::Arguments) {
+//      let mmio_location = 0x4000 as *mut u8;
+
+//      // for letter in data.as_bytes().chunks(8) {
+//      //     core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
+//      // }
     
-     return;
+//      return;
 
-    // use core::fmt::Write;
-    // WRITER.lock().write_fmt(args).unwrap();
-}
+//     // use core::fmt::Write;
+//     // WRITER.lock().write_fmt(args).unwrap();
+// }
