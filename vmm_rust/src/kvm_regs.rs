@@ -39,3 +39,10 @@ pub const EFER_LME: u64 = 1 << 8;
 /// When set indicates long mode is active.
 pub const EFER_LMA: u64 = 1 << 10;
 
+
+pub const ACCESS_PRESENT: u8 = 1 << 7;
+pub const ACCESS_NOT_SYS: u8 = 1 << 4;
+pub const ACCESS_EXEC: u8 = 1 << 3;
+pub const ACCESS_DC: u8 = 1 << 2;
+pub const ACCESS_RW: u8 = 1 << 1;
+pub const ACCESS_ACCESSED: u8 = 1 << 0;

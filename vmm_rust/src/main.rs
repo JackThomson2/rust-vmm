@@ -10,7 +10,7 @@ mod vm;
 
 fn main() {
     println!("Creating the kvm now");
-    let mut kvm = unsafe { vm::Vm::create(100 * 1024 * 1024).unwrap() };
+    let mut kvm = unsafe { vm::Vm::create(0x10000).unwrap() };
     println!("Created successfully");
 
     println!("Loading code into vm");

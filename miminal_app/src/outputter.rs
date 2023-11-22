@@ -1,26 +1,26 @@
-use lazy_static::lazy_static;
-use spin::Mutex;
-use core::fmt;
+// use lazy_static::lazy_static;
+// use spin::Mutex;
+// use core::fmt;
 
-pub const WRITER: Writer = Writer {};
+// pub const WRITER: Writer = Writer {};
 
-pub struct Writer();
+// pub struct Writer();
 
-impl Writer {
-    pub fn write_string(&self, data: &str) {
-        unsafe {
-            let mmio_location = 0x4000 as *mut u8;
+// impl Writer {
+//     pub fn write_string(&self, data: &str) {
+//         unsafe {
+//             let mmio_location = 0x4000 as *mut u8;
 
-            for letter in data.as_bytes().chunks(8) {
-                core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
-            }
-        }
-    }
-}
+//             for letter in data.as_bytes().chunks(8) {
+//                 core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
+//             }
+//         }
+//     }
+// }
 
 pub fn write_bytes(data: &[u8]) {
     unsafe {
-        let mmio_location = 0x4000 as *mut u8;
+        let mmio_location = 0x10000 as *mut u8;
 
         for letter in data.chunks(8) {
             core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
@@ -30,11 +30,20 @@ pub fn write_bytes(data: &[u8]) {
 
 pub fn write_string(data: &str) {
     unsafe {
-        let mmio_location = 0x4000 as *mut u8;
+        let mmio_location = 0x10000 as *mut u8;
 
         for letter in data.as_bytes().chunks(8) {
             core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
         }
+    }
+}
+
+#[inline(never)]
+pub unsafe fn get_number(location: *mut u8) -> u8 {
+    if location.read_volatile() > 10 {
+        b'a'
+    } else {
+        b'b'
     }
 }
 
@@ -63,7 +72,7 @@ pub fn write_string(data: &str) {
 //      // for letter in data.as_bytes().chunks(8) {
 //      //     core::ptr::copy(letter.as_ptr(), mmio_location, letter.len());
 //      // }
-    
+
 //      return;
 
 //     // use core::fmt::Write;

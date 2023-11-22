@@ -14,6 +14,9 @@ unsafe fn get_driver<'d>(run: &mut kvm_run, drivers: &'d mut Drivers) -> Option<
         RNG_MMIO_DEVICE => {
             Some(&mut drivers.rng)
         },
+        81920..=81930 => {
+            Some(&mut drivers.console)
+        },
         x => {
             println!("Unkown address {x}");
             None
@@ -25,7 +28,6 @@ pub unsafe fn handle_mmio(run: &mut kvm_run, drivers: &mut Drivers) {
     let driver = match get_driver(run, drivers) {
         Some(driver) => { driver},
         None => {
-            println!("Unknown address access");
             return;
         }
     };

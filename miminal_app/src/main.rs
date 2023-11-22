@@ -1,7 +1,7 @@
 #![no_std] // don't link the Rust standard library
 #![no_main] // disable all Rust-level entry points
 
-// mod printing;
+mod outputter;
 
 use core::arch::asm;
 use core::panic::PanicInfo;
@@ -10,7 +10,7 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("start.s"));
 
-// use crate::printing::{Writer, WRITER, write_string, write_bytes};
+use crate::outputter::{write_string, write_bytes, get_number};
 
 /// This function is called on panic.
 #[panic_handler]
@@ -43,48 +43,63 @@ unsafe fn read_from_port(port: u16) -> u8 {
     value
 }
 
-const mem_total: usize = 10 * 1024 * 1024;
+#[inline(always)]
+unsafe fn debug_line() {
+    write_to_port(0x1000, b'.');
+    write_to_port(0x1000, b'\n');
+}
+
 const HELLO_WORLD: &[u8] = b"Hello world port, from testing rust!!\n";
+const SAMPLE_STACK: [u8;4] = [1,2,3,4];
 
 #[no_mangle]
-pub extern "C" fn not_main() -> ! {
-    unsafe {
-        for &c in HELLO_WORLD.iter() {
-            write_to_port(0x1000, c);
-        }
+pub unsafe extern "C" fn not_main() -> ! {
+    let virt_home = 0x2010 as *mut u8;
+    virt_home.write_volatile(1);
 
-        write_string_to_port(HELLO_WORLD.as_ptr(), HELLO_WORLD.len(), 0x1000);
+    debug_line();
 
+    // write_to_port(0x1000, get_number(virt_home));
 
-        let mmio_location = (mem_total + 0x2000) as *mut u8;
+    let playbound_ptr = 0x4000 as *mut u8;
 
-        // core::ptr::write(HELLO_WORLD.as_ptr(), mmio_location, 8);
+    // let mut stack = unsafe { core::slice::from_raw_parts_mut(playbound_ptr, 20) };
+    let mut stack = SAMPLE_STACK.clone();
 
-        // for &letter in HELLO_WORLD.iter() {
-        //     mmio_location.write_volatile(letter);
-        // }
+    // let mut stack = [0u8; 2];
+    let mut sum = 0;
 
-        // let mut hello_iter = HELLO_WORLD.chunks_exact(8);
-        // while let Some(letter) = hello_iter.next() {
-        //     core::ptr::copy_nonoverlapping(letter.as_ptr(), mmio_location, letter.len());
-        // }
-    }
+    debug_line();
+
+    // for &c in HELLO_WORLD.iter() {
+    //     write_to_port(0x1000, c);
+    // }
+
+    // write_string_to_port(HELLO_WORLD.as_ptr(), HELLO_WORLD.len(), 0x1000);
+
+    // let mmio_location = (0x4000) as *mut u8;
+
+    // for &letter in HELLO_WORLD.iter() {
+    //     mmio_location.write_volatile(letter);
+    // }
+
+    // let mut hello_iter = HELLO_WORLD.chunks_exact(8);
+    // while let Some(letter) = hello_iter.next() {
+    //     core::ptr::copy_nonoverlapping(letter.as_ptr(), mmio_location, letter.len());
+    // }
 
     // for &letter in hello_iter.remainder().iter() {
     //     mmio_location.write_volatile(letter);
     // }
 
-    // write_to_port(0x1000, 0);
-    // write_to_port(0x1000, 0);
-    // write_to_port(0x1000, 0);
-
     // for letter in HELLO_WORLD.chunks(8) {
     //     core::ptr::copy_nonoverlapping(letter.as_ptr(), mmio_location, letter.len());
     // }
 
-    // write_bytes(HELLO_WORLD);
+    write_bytes(b"Now using our fancy message\n");
+    write_bytes(HELLO_WORLD);
 
-    // write_string("Printing is much easier now..");
+    write_string("Printing is much easier now..\n");
 
     loop {}
 }

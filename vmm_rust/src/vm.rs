@@ -55,9 +55,9 @@ unsafe fn read_file_into_mem(
     rewind(file_ptr);
     println!("File size is: {file_size}");
 
-    let read_location = (memory_location as *mut c_void).add(0x4000);
+    let read_location = (memory_location as *mut u8).add(0x4000);
 
-    let loaded = fread(read_location, 1, file_size as usize, file_ptr);
+    let loaded = fread(read_location as *mut c_void, 1, file_size as usize, file_ptr);
     println!("Read {loaded} bytes into the vm");
 
     fclose(file_ptr);
@@ -91,7 +91,7 @@ unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> 
     sregs.cs.base = 0x0;
     sregs.cs.limit = 0x0;
     sregs.cs.selector = 0x8;
-    sregs.cs.type_ = 10;
+    sregs.cs.type_ = 2;
     sregs.cs.present = 1;
     sregs.cs.dpl = 0;
     sregs.cs.db = 0;
@@ -132,14 +132,32 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     w(0x1000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x2000);
     w(0x2000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x3000);
 
-    w(0x3000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x4000);
+    for i in 0..20 {
+        let loc = 0x3000 + (i * 8);
+        let pos = (i * 0x1000) + 0x4000;
 
-    w(0x3008, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x5000);
-    w(0x3010, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x6000);
-    w(0x3018, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
-    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
-    w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
-    w(0x3030, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
+        println!("Mapping at loc: {loc:X} and pos: {pos:X}");
+
+        w(loc, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | pos);
+    }
+
+
+   // PTE[0] maps Virt [0x0000:0x0fff] -> Phys [0x4000:0x4fff].
+    // w(0x3000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x4000);
+    // // PTE[1] maps Virt [0x1000:0x1fff] -> Phys [0x5000:0x5fff].
+    // w(0x3008, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x5000);
+    // // PTE[2] maps Virt [0x2000:0x2fff] -> Phys [0x6000:0x6fff].
+    // w(0x3010, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x6000);
+    // // PTE[2] maps Virt [0x4000:0x3fff] -> Phys [0x7000:0x7fff].
+    // w(0x3018, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
+
+    // // Page entries into MMIO locations
+    // // PTE[4] maps Virt [0x4000:0x4fff] -> Phys [0x8000:0x8fff]
+    // w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
+    // // PTE[5] maps Virt [0x5000:0x5fff] -> Phys [0x9000:0x9fff]
+    // w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
+    // // PTE[6] maps Virt [0x6000:0x6fff] -> Phys [0xa000:0xafff]
+    // w(0x3030, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0xA000);
 
     // Map into our MMIO region!
     // w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
@@ -195,6 +213,9 @@ impl Vm {
         let run_struct_sz = ioctl(kvmfd, KVM_GET_VCPU_MMAP_SIZE(), null_mut() as *mut u32);
         check_libc!(run_struct_sz, "Get VCPU MMAP Size");
 
+        setup_vcpu_registers(vcpufd, memory)?;
+        // setup_real_mode(vcpufd)?;
+
         let run = mmap(
             null_mut(),
             run_struct_sz as usize,
@@ -208,8 +229,6 @@ impl Vm {
             return Err(eyre!("Error mmap vcpu"));
         }
 
-        setup_vcpu_registers(vcpufd, memory)?;
-        // setup_real_mode(vcpufd)?;
 
         Ok(Self {
             kvmfd,
