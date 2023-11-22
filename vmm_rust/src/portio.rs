@@ -4,10 +4,11 @@ use kvm_bindings::*;
 
 const COM1:u32 = 0x3f8;
 const LONG_MODE_COM:u32 = 0x1000;
+const COM2:u32 = 0x600;
 
 unsafe fn get_driver<'d>(port: u32, drivers: &'d mut Drivers) -> Option<&'d mut dyn Driver> {
     return match port {
-        COM1 | LONG_MODE_COM => {
+        COM1 | LONG_MODE_COM | COM2 => {
             Some(&mut drivers.console)
         },
         _ => {

@@ -2,10 +2,12 @@
 build-std-features = ["compiler-builtins-mem"]
 build-std = ["core", "compiler_builtins"]
 
+# [unstable]
+# build-std = ["core", "compiler_builtins", "alloc"]
+# build-std-features = ["compiler-builtins-mem"]
+
 [target.minimal_compile]
 rustflags = ["-C", "link-arg=-Tlinker.ld"]
 
 [build]
 target = "minimal_compile.json"
-
-

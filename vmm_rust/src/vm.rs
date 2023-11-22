@@ -1,14 +1,14 @@
 use std::{ffi::CString, ptr::null_mut};
 
-use libc::*;
 use kvm_bindings::*;
+use libc::*;
 
 use crate::drivers::Drivers;
-use crate::{check_libc, check_libc_no_print};
-use crate::libc_macros::get_os_error;
 use crate::kvm_regs::*;
-use crate::portio::handle_pio;
+use crate::libc_macros::get_os_error;
 use crate::mmio::handle_mmio;
+use crate::portio::handle_pio;
+use crate::{check_libc, check_libc_no_print};
 
 use eyre::{eyre, Result};
 
@@ -19,11 +19,18 @@ pub struct Vm {
     memory_amount: usize,
     vcpufd: c_int,
     run: *mut kvm_run,
-    drivers: Drivers
+    drivers: Drivers,
 }
 
 unsafe fn load_vm_memory(memory_amount: usize) -> Result<u64> {
-    let location = mmap(null_mut(), memory_amount, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    let location = mmap(
+        null_mut(),
+        memory_amount,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0,
+    );
     if location == MAP_FAILED {
         return Err(eyre!("Error allocating memory"));
     }
@@ -31,18 +38,26 @@ unsafe fn load_vm_memory(memory_amount: usize) -> Result<u64> {
     Ok(location as u64)
 }
 
-unsafe fn read_file_into_mem(file_location: &str, memory_location: u64, _memory_amount: usize) -> Result<()> {
+unsafe fn read_file_into_mem(
+    file_location: &str,
+    memory_location: u64,
+    _memory_amount: usize,
+) -> Result<()> {
     let file_loc = CString::new(file_location)?;
     let read_flag = CString::new("r")?;
-    
+
     let file_ptr = fopen(file_loc.as_ptr(), read_flag.as_ptr());
     if file_ptr.is_null() {
         return Err(eyre!("Error reading file {file_location}"));
     }
+    fseek(file_ptr, 0, SEEK_END);
+    let file_size = ftell(file_ptr);
+    rewind(file_ptr);
+    println!("File size is: {file_size}");
 
     let read_location = (memory_location as *mut c_void).add(0x4000);
 
-    let loaded = fread(read_location, 1, 0x4000, file_ptr);
+    let loaded = fread(read_location, 1, file_size as usize, file_ptr);
     println!("Read {loaded} bytes into the vm");
 
     fclose(file_ptr);
@@ -117,15 +132,35 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     w(0x1000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x2000);
     w(0x2000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x3000);
 
-    w(0x3000, PAGE_ENTRY_PRESENT | 0x4000);
+    w(0x3000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x4000);
 
     w(0x3008, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x5000);
     w(0x3010, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x6000);
     w(0x3018, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
+    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x7000);
+    w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
+    w(0x3030, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
 
     // Map into our MMIO region!
-    w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
-    w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
+    // w(0x3020, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x8000);
+    // w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
+}
+
+unsafe fn setup_real_mode(vcpu: c_int) -> Result<()> {
+    let mut regs = kvm_regs::default();
+    check_libc!(ioctl(vcpu, KVM_GET_REGS(), &mut regs), "KVM GET REGS");
+    regs.rip = 0;
+    regs.rflags = 0x2;
+    check_libc!(ioctl(vcpu, KVM_SET_REGS(), &mut regs), "KVM SET REGS");
+
+    let mut sregs = kvm_sregs::default();
+    check_libc!(ioctl(vcpu, KVM_GET_SREGS(), &mut sregs), "KVM GET SREGS");
+    sregs.cs.base = 0;
+    sregs.cs.selector = 0;
+
+    check_libc!(ioctl(vcpu, KVM_SET_SREGS(), &mut sregs), "KVM SET SREGS");
+
+    Ok(())
 }
 
 impl Vm {
@@ -136,7 +171,7 @@ impl Vm {
         };
         check_libc!(kvmfd, "Opening /dev/kvm");
 
-        let vmfd = ioctl(kvmfd, KVM_CREATE_VM(), 0); 
+        let vmfd = ioctl(kvmfd, KVM_CREATE_VM(), 0);
         check_libc!(vmfd, "Calling KVM create vm");
 
         let memory = load_vm_memory(memory_amount)?;
@@ -146,10 +181,13 @@ impl Vm {
             flags: 0,
             guest_phys_addr: 0x0,
             memory_size: memory_amount as u64,
-            userspace_addr: memory
+            userspace_addr: memory,
         };
 
-        check_libc!(ioctl(vmfd, KVM_SET_USER_MEMORY_REGION(), &memory_region), "Setting the kvm user memory region");
+        check_libc!(
+            ioctl(vmfd, KVM_SET_USER_MEMORY_REGION(), &memory_region),
+            "Setting the kvm user memory region"
+        );
 
         let vcpufd = ioctl(vmfd, KVM_CREATE_VCPU(), 0);
         check_libc!(vcpufd, "Createing the virtual cpu");
@@ -157,13 +195,21 @@ impl Vm {
         let run_struct_sz = ioctl(kvmfd, KVM_GET_VCPU_MMAP_SIZE(), null_mut() as *mut u32);
         check_libc!(run_struct_sz, "Get VCPU MMAP Size");
 
-        let run = mmap(null_mut(), run_struct_sz as usize, PROT_READ | PROT_WRITE, MAP_SHARED, vcpufd, 0);
+        let run = mmap(
+            null_mut(),
+            run_struct_sz as usize,
+            PROT_READ | PROT_WRITE,
+            MAP_SHARED,
+            vcpufd,
+            0,
+        );
 
         if run.is_null() {
             return Err(eyre!("Error mmap vcpu"));
         }
 
         setup_vcpu_registers(vcpufd, memory)?;
+        // setup_real_mode(vcpufd)?;
 
         Ok(Self {
             kvmfd,
@@ -177,7 +223,7 @@ impl Vm {
     }
 
     pub unsafe fn load_file(&self, file_location: &str) -> Result<()> {
-       read_file_into_mem(file_location, self.memory, self.memory_amount) 
+        read_file_into_mem(file_location, self.memory, self.memory_amount)
     }
 
     unsafe fn get_run_ref(&self) -> &mut kvm_run {
@@ -186,7 +232,9 @@ impl Vm {
 
     // Horrible hack for now should probably fix this
     unsafe fn get_driver_ref(&self) -> &mut Drivers {
-        (((&self.drivers) as *const _) as *mut Drivers).as_mut().unwrap()
+        (((&self.drivers) as *const _) as *mut Drivers)
+            .as_mut()
+            .unwrap()
     }
 
     pub unsafe fn run(&mut self) -> Result<()> {
@@ -199,14 +247,13 @@ impl Vm {
             match run_ref.exit_reason {
                 KVM_EXIT_HLT | KVM_EXIT_SHUTDOWN => {
                     break;
-                },
+                }
                 KVM_EXIT_IO => {
-                    // println!("PORTIO exiit");
                     handle_pio(run_ref, self.get_driver_ref());
-                },
+                }
                 KVM_EXIT_MMIO => {
                     handle_mmio(run_ref, self.get_driver_ref());
-                },
+                }
                 _ => {
                     println!("Unknown exit reason {}", run_ref.exit_reason);
                 }
