@@ -8,9 +8,16 @@ use core::panic::PanicInfo;
 
 use core::arch::global_asm;
 
-global_asm!(include_str!("start.s"));
+global_asm!(include_str!("start.S"));
+
+global_asm!(include_str!("page_fault.S"));
+global_asm!(include_str!("interrupts_blank.S"));
 
 use crate::outputter::{write_string, write_bytes, get_number};
+
+extern "C" {
+    fn get_page_loc() -> u64;
+}
 
 /// This function is called on panic.
 #[panic_handler]
@@ -25,7 +32,7 @@ fn as_array_8(slice: &[u8]) -> &[u8; 8] {
 
 unsafe fn write_to_port(port: u16, value: u8) {
     unsafe {
-        asm!("out dx, al", in("dx") port, in("al") value, options(nomem, nostack, preserves_flags));
+        asm!("out dx, al", in("dx") port, in("al") value, options());
     }
 }
 
@@ -49,27 +56,93 @@ unsafe fn debug_line() {
     write_to_port(0x1000, b'\n');
 }
 
+#[inline(never)]
+unsafe fn dump_64_bit(incoming: u64) -> [u8; 20] {
+    let mut res = [0; 20];
+    let mut idx = 0;
+
+    for y in 0..4 {
+        let mut using = incoming;
+
+        let to_shift = (3 - y) * 4;
+        using >>= to_shift;
+        using &= 0b1111;
+
+        for i in 0..4 {
+            let inner_shift = (3 - i);
+            let result = (using >> inner_shift) & 1;
+
+            res[idx] = (result + 48) as u8;
+            idx += 1;
+        }
+
+        if y < 3 {
+            res[idx] = b'_';
+            idx += 1;
+        }
+    }
+
+    res
+}
+
+#[inline(never)]
+unsafe fn int_to_str(incoming: u64) -> [u8; 20] {
+    let mut res = [0; 20];
+    let mut idx = 0;
+
+    let mut offsetter = 1000;
+
+    for i in 0..4 {
+        let divisor = incoming / offsetter;
+        let result = divisor % 10;
+
+        res[idx] = (result + 48) as u8;
+        idx += 1;
+
+        offsetter /= 10;
+    }
+
+    res
+}
+
 const HELLO_WORLD: &[u8] = b"Hello world port, from testing rust!!\n";
 const SAMPLE_STACK: [u8;4] = [1,2,3,4];
 
 #[no_mangle]
 pub unsafe extern "C" fn not_main() -> ! {
-    let virt_home = 0x2010 as *mut u8;
-    virt_home.write_volatile(1);
+    let res = get_page_loc();
+
+    let le_bytes = res.to_le_bytes();
+    let byte_ref = le_bytes.as_ref();
+    write_string_to_port(byte_ref.as_ptr(), le_bytes.len(), 0x2000);
+
+
+    // let as_str = int_to_str(res);
+
+    // for i in as_str {
+    //     write_to_port(0x1000, i);
+    // }
+
+    // debug_line();
+
+    let as_str = dump_64_bit(res);
+
+    for i in as_str {
+        write_to_port(0x1000, i);
+    }
 
     debug_line();
-
     // write_to_port(0x1000, get_number(virt_home));
 
-    let playbound_ptr = 0x4000 as *mut u8;
+    // let playbound_ptr = 0x4000 as *mut u8;
 
-    // let mut stack = unsafe { core::slice::from_raw_parts_mut(playbound_ptr, 20) };
-    let mut stack = SAMPLE_STACK.clone();
+    // // let mut stack = unsafe { core::slice::from_raw_parts_mut(playbound_ptr, 20) };
+    // let mut stack = SAMPLE_STACK.clone();
 
-    // let mut stack = [0u8; 2];
-    let mut sum = 0;
+    // // let mut stack = [0u8; 2];
+    // let mut sum = 0;
 
-    debug_line();
+    // debug_line();
 
     // for &c in HELLO_WORLD.iter() {
     //     write_to_port(0x1000, c);
@@ -96,10 +169,10 @@ pub unsafe extern "C" fn not_main() -> ! {
     //     core::ptr::copy_nonoverlapping(letter.as_ptr(), mmio_location, letter.len());
     // }
 
-    write_bytes(b"Now using our fancy message\n");
-    write_bytes(HELLO_WORLD);
+    // write_bytes(b"Now using our fancy message\n");
+    // write_bytes(HELLO_WORLD);
 
-    write_string("Printing is much easier now..\n");
+    // write_string("Printing is much easier now..\n");
 
     loop {}
 }

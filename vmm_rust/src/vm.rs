@@ -135,8 +135,9 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     for i in 0..20 {
         let loc = 0x3000 + (i * 8);
         let pos = (i * 0x1000) + 0x4000;
+        let virt_loc = i * 0x10000;
 
-        println!("Mapping at loc: {loc:X} and pos: {pos:X}");
+        println!("Mapping at loc: {loc:X} and pos: {pos:X}. Virual address: {virt_loc:0X}");
 
         w(loc, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | pos);
     }
