@@ -20,14 +20,14 @@ setcs:
     and rsp, -16
 
     cld
-    # call debug_message
-    cld
     call load_idt
+
+    mov rax, 0x8000
+    mov dword ptr [rax], 0x1234
 
     xor rax, rax
     xor rdx, rdx
 
-    cld
     jmp not_main
 
 get_page_loc:
@@ -45,24 +45,25 @@ debug_dot:
     ret
 
 setup_idt:
-    mov eax, 14 << 4
+    mov eax, 14
+    shl eax, 4
     lea rdx, [page_fault_handler]
 
     mov [idt + eax], dx
     mov word ptr [idt + eax + 2], 0x8
-    mov word ptr [idt + eax + 4], 0x8E00
+    mov word ptr [idt + eax + 4], 0x8E
 
     shr rdx, 16
     mov [idt + eax + 6], dx
 
     shr rdx, 16
-    mov [idt + eax], edx
+    mov [idt + eax + 8], edx
 
     ret
 
 load_idt:
     call setup_idt
-    lidt idt_descriptor
+    lidt [idt_descriptor]
     sti
     ret
 

@@ -280,6 +280,13 @@ impl Vm {
             }
         }
 
+        let memory_ptr = self.memory as *mut u8;
+        let found = memory_ptr.add(0x4000 + 0x8000).read_volatile();
+        println!("Data at pos {found}");
+
+        let found = memory_ptr.add(0x4000 + 0x9000).read_volatile();
+        println!("Data at age loc {found}");
+
         println!("KVM has exited closing. Errors: {}", get_os_error());
         Ok(())
     }

@@ -110,14 +110,22 @@ const SAMPLE_STACK: [u8;4] = [1,2,3,4];
 
 #[no_mangle]
 pub unsafe extern "C" fn not_main() -> ! {
-    let res = get_page_loc();
+    // let res = get_page_loc();
 
-    let le_bytes = res.to_le_bytes();
-    let byte_ref = le_bytes.as_ref();
-    write_string_to_port(byte_ref.as_ptr(), le_bytes.len(), 0x2000);
+    // let le_bytes = res.to_le_bytes();
+    // let byte_ref = le_bytes.as_ref();
+    // write_string_to_port(byte_ref.as_ptr(), le_bytes.len(), 0x2000);
 
 
-    // let as_str = int_to_str(res);
+    // // let as_str = int_to_str(res);
+
+    // // for i in as_str {
+    // //     write_to_port(0x1000, i);
+    // // }
+
+    // // debug_line();
+
+    // let as_str = dump_64_bit(res);
 
     // for i in as_str {
     //     write_to_port(0x1000, i);
@@ -125,13 +133,9 @@ pub unsafe extern "C" fn not_main() -> ! {
 
     // debug_line();
 
-    let as_str = dump_64_bit(res);
+    let mmio_location = (0x20000) as *mut u8;
+    mmio_location.write_volatile(1);
 
-    for i in as_str {
-        write_to_port(0x1000, i);
-    }
-
-    debug_line();
     // write_to_port(0x1000, get_number(virt_home));
 
     // let playbound_ptr = 0x4000 as *mut u8;
