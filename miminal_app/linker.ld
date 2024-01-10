@@ -1,20 +1,18 @@
-ENTRY(mystart)
+ENTRY(_start)
 
 SECTIONS
 {
     . = 0x0;
-    .all : {
-       *(.text.boot*)
-       *(.text*)
-       *(.bss*)
-       *(.data*)
-       *(.rodata*)
-       *(COMMON*)
-    } :code
+    .text : { *(.text*) }
+    .bss  : { *(.bss*) }
+    .data : { *(.data*) }
+    .rodata : { *(.rodata*) }
+    COMMON* : { *(COMMON*) }
     .shstrtab : {
        *(.shstrtab)
     }
+
     /DISCARD/ : {
-      *(*)
+        *(*)
     }
 }

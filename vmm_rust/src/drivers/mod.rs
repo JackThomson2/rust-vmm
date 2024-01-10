@@ -1,7 +1,8 @@
-use self::{console::ConsoleDevice, rng::RngDevice, binary_write::BinaryDriver};
+use self::{console::ConsoleDevice, rng::RngDevice, binary_write::BinaryDriver, sleep::SleepDevice};
 
 pub mod console;
 pub mod rng;
+pub mod sleep;
 pub mod binary_write;
 
 pub trait Driver {
@@ -15,6 +16,7 @@ pub struct Drivers {
     pub console: ConsoleDevice,
     pub rng: RngDevice,
     pub binary: BinaryDriver,
+    pub sleep: SleepDevice
 }
 
 impl Drivers {

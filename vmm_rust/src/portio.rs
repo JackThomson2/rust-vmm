@@ -7,7 +7,7 @@ const LONG_MODE_COM:u32 = 0x1000;
 const LONG_MODE_HEX:u32 = 0x2000;
 const COM2:u32 = 0x600;
 
-unsafe fn get_driver<'d>(port: u32, drivers: &'d mut Drivers) -> Option<&'d mut dyn Driver> {
+unsafe fn get_driver<'d>(port: u32, drivers: &'d mut Drivers, memory: u32) -> Option<&'d mut dyn Driver> {
     return match port {
         COM1 | LONG_MODE_COM | COM2 => {
             Some(&mut drivers.console)
@@ -21,9 +21,9 @@ unsafe fn get_driver<'d>(port: u32, drivers: &'d mut Drivers) -> Option<&'d mut 
     }
 }
 
-pub unsafe fn handle_pio(run: &mut kvm_run, drivers: &mut Drivers) {
+pub unsafe fn handle_pio(run: &mut kvm_run, drivers: &mut Drivers, memory: u32) {
     let port = run.__bindgen_anon_1.io.port as u32;
-    let driver = match get_driver(port, drivers) {
+    let driver = match get_driver(port, drivers, memory) {
         Some(driver) => { driver},
         None => {
             println!("Unknown PIO port: {port}.");

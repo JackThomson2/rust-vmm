@@ -1,3 +1,4 @@
+use std::hint::spin_loop;
 use std::{ffi::CString, ptr::null_mut};
 
 use kvm_bindings::*;
@@ -22,12 +23,15 @@ pub struct Vm {
     drivers: Drivers,
 }
 
+const FILE_OFFSET: usize = 0x5000;
+const PHYSICAL_SLOT: u64 = 0x1000;
+
 unsafe fn load_vm_memory(memory_amount: usize) -> Result<u64> {
     let location = mmap(
         null_mut(),
         memory_amount,
         PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS,
+        MAP_SHARED | MAP_ANONYMOUS,
         -1,
         0,
     );
@@ -53,11 +57,16 @@ unsafe fn read_file_into_mem(
     fseek(file_ptr, 0, SEEK_END);
     let file_size = ftell(file_ptr);
     rewind(file_ptr);
-    println!("File size is: {file_size}");
+    println!("File size is: {file_size}. Writing at pos: {FILE_OFFSET:X}");
 
-    let read_location = (memory_location as *mut u8).add(0x4000);
+    let read_location = (memory_location as *mut u8).add(FILE_OFFSET);
 
-    let loaded = fread(read_location as *mut c_void, 1, file_size as usize, file_ptr);
+    let loaded = fread(
+        read_location as *mut c_void,
+        1,
+        file_size as usize,
+        file_ptr,
+    );
     println!("Read {loaded} bytes into the vm");
 
     fclose(file_ptr);
@@ -78,10 +87,10 @@ unsafe fn setup_kvm_data_segment_long_mode(segment: &mut kvm_segment) {
     segment.g = 0;
 }
 
-unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> {
+unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64, memory_amount: u64) -> Result<()> {
     let mut regs = kvm_regs::default();
     check_libc!(ioctl(vcpu, KVM_GET_REGS(), &mut regs), "KVM GET REGS");
-    regs.rip = 0;
+    regs.rip = 0x0;
     regs.rflags = 0x2;
     check_libc!(ioctl(vcpu, KVM_SET_REGS(), &mut regs), "KVM SET REGS");
 
@@ -91,7 +100,7 @@ unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> 
     sregs.cs.base = 0x0;
     sregs.cs.limit = 0x0;
     sregs.cs.selector = 0x8;
-    sregs.cs.type_ = 2;
+    sregs.cs.type_ = 10;
     sregs.cs.present = 1;
     sregs.cs.dpl = 0;
     sregs.cs.db = 0;
@@ -105,10 +114,10 @@ unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> 
     setup_kvm_data_segment_long_mode(&mut sregs.gs);
     setup_kvm_data_segment_long_mode(&mut sregs.es);
 
-    setup_long_4level_paging(memory_location);
+    setup_long_4level_paging(memory_location, memory_amount);
 
-    sregs.cr3 = 0x0;
-    sregs.cr0 = CR0_PG | CR0_PE;
+    sregs.cr3 = PHYSICAL_SLOT;
+    sregs.cr0 |= CR0_PG | CR0_PE;
     sregs.cr4 = CR4_PAE;
     sregs.efer = EFER_LMA | EFER_LME;
 
@@ -118,9 +127,10 @@ unsafe fn setup_vcpu_registers(vcpu: c_int, memory_location: u64) -> Result<()> 
 }
 
 // Adapted form https://github.com/johannst/mini-kvm-rs/blob/main/examples/long_mode.rs#L63
-unsafe fn setup_long_4level_paging(memory_location: u64) {
+unsafe fn setup_long_4level_paging(memory_location: u64, memory_amount: u64) {
     let memory_ptr = memory_location as *mut u8;
     let w = |offset: u64, val: u64| {
+        let val = val + PHYSICAL_SLOT;
         let bytes = val.to_le_bytes();
         let offset_ptr = memory_ptr.add(offset as usize);
 
@@ -132,9 +142,9 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     w(0x1000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x2000);
     w(0x2000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x3000);
 
-    for i in 0..20 {
+    for i in 0..100 {
         let loc = 0x3000 + (i * 8);
-        let pos = (i * 0x1000) + 0x4000;
+        let pos = (i * 0x1000) + FILE_OFFSET as u64;
         let virt_loc = i * 0x10000;
 
         println!("Mapping at loc: {loc:X} and pos: {pos:X}. Virual address: {virt_loc:0X}");
@@ -142,8 +152,18 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
         w(loc, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | pos);
     }
 
+    for i in 0..20 {
+        let real_i = i + 100;
+        let loc = 0x3000 + (real_i * 8);
 
-   // PTE[0] maps Virt [0x0000:0x0fff] -> Phys [0x4000:0x4fff].
+        let pos = (i * 0x1000) + memory_amount;
+        let virt_loc = real_i * 0x10000;
+
+        println!("Mapping VIRTIO at loc: {loc:X} and pos: {pos:X}. Virual address: {virt_loc:0X}");
+        w(loc, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | pos);
+    }
+
+    // PTE[0] maps Virt [0x0000:0x0fff] -> Phys [0x4000:0x4fff].
     // w(0x3000, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x4000);
     // // PTE[1] maps Virt [0x1000:0x1fff] -> Phys [0x5000:0x5fff].
     // w(0x3008, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x5000);
@@ -165,17 +185,24 @@ unsafe fn setup_long_4level_paging(memory_location: u64) {
     // w(0x3028, PAGE_ENTRY_PRESENT | PAGE_ENTRY_RW | 0x9000);
 }
 
+unsafe fn load_memor_addr(memory_location: u64, location: u64) {
+    let memory_ptr = memory_location as *mut u8;
+    let offset_ptr = memory_ptr.add(location as usize + FILE_OFFSET);
+
+    println!("File loc: {}", offset_ptr.read_volatile());
+}
+
 unsafe fn setup_real_mode(vcpu: c_int) -> Result<()> {
     let mut regs = kvm_regs::default();
     check_libc!(ioctl(vcpu, KVM_GET_REGS(), &mut regs), "KVM GET REGS");
-    regs.rip = 0;
-    regs.rflags = 0x2;
+    regs.rip = 0x0;
+    regs.rflags = 0x0;
     check_libc!(ioctl(vcpu, KVM_SET_REGS(), &mut regs), "KVM SET REGS");
 
     let mut sregs = kvm_sregs::default();
     check_libc!(ioctl(vcpu, KVM_GET_SREGS(), &mut sregs), "KVM GET SREGS");
-    sregs.cs.base = 0;
-    sregs.cs.selector = 0;
+    sregs.cs.base = 0x0000;
+    sregs.cs.selector = 0x0;
 
     check_libc!(ioctl(vcpu, KVM_SET_SREGS(), &mut sregs), "KVM SET SREGS");
 
@@ -198,7 +225,7 @@ impl Vm {
         let memory_region = kvm_userspace_memory_region {
             slot: 0,
             flags: 0,
-            guest_phys_addr: 0x0,
+            guest_phys_addr: PHYSICAL_SLOT,
             memory_size: memory_amount as u64,
             userspace_addr: memory,
         };
@@ -214,7 +241,7 @@ impl Vm {
         let run_struct_sz = ioctl(kvmfd, KVM_GET_VCPU_MMAP_SIZE(), null_mut() as *mut u32);
         check_libc!(run_struct_sz, "Get VCPU MMAP Size");
 
-        setup_vcpu_registers(vcpufd, memory)?;
+        setup_vcpu_registers(vcpufd, memory, memory_amount as u64)?;
         // setup_real_mode(vcpufd)?;
 
         let run = mmap(
@@ -229,7 +256,6 @@ impl Vm {
         if run.is_null() {
             return Err(eyre!("Error mmap vcpu"));
         }
-
 
         Ok(Self {
             kvmfd,
@@ -257,7 +283,16 @@ impl Vm {
             .unwrap()
     }
 
+    pub unsafe fn dump_stack(&self) {
+        let stack_ptr = 0x25000;
+        for i in 0..100 {
+            load_memor_addr(self.memory, stack_ptr - i);
+        }
+
+    }
+
     pub unsafe fn run(&mut self) -> Result<()> {
+        println!("\n");
         let run_ref = self.get_run_ref();
 
         loop {
@@ -265,14 +300,17 @@ impl Vm {
             check_libc!(kvm_ret, "Error running cpu");
 
             match run_ref.exit_reason {
-                KVM_EXIT_HLT | KVM_EXIT_SHUTDOWN => {
-                    break;
+                KVM_EXIT_HLT => {
+                    spin_loop();
                 }
+                KVM_EXIT_SHUTDOWN => {
+                    break;
+                },
                 KVM_EXIT_IO => {
-                    handle_pio(run_ref, self.get_driver_ref());
+                    handle_pio(run_ref, self.get_driver_ref(), self.memory_amount as u32);
                 }
                 KVM_EXIT_MMIO => {
-                    handle_mmio(run_ref, self.get_driver_ref());
+                    handle_mmio(run_ref, self.get_driver_ref(), self.memory_amount as u64);
                 }
                 _ => {
                     println!("Unknown exit reason {}", run_ref.exit_reason);
@@ -280,14 +318,20 @@ impl Vm {
             }
         }
 
-        let memory_ptr = self.memory as *mut u8;
-        let found = memory_ptr.add(0x4000 + 0x8000).read_volatile();
-        println!("Data at pos {found}");
 
-        let found = memory_ptr.add(0x4000 + 0x9000).read_volatile();
-        println!("Data at age loc {found}");
+        // load_memor_addr(self.memory, regs.rsp);
+        // self.dump_stack();
 
+        println!("\n");
         println!("KVM has exited closing. Errors: {}", get_os_error());
+
+        let mut regs = kvm_regs::default();
+        check_libc!(ioctl(self.vcpufd, KVM_GET_REGS(), &mut regs), "KVM GET REGS");
+
+        println!("Stats {:#?}", regs);
+        println!("Flags: {}", run_ref.flags);
+        println!("Line that errored: {:0x}", regs.rip);
+
         Ok(())
     }
 }
