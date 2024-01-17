@@ -4,15 +4,22 @@
 
 #[macro_use]
 mod print;
-mod cpu_exceptions;
-mod gdt;
-mod interrupts;
 mod mmio;
-mod rng;
-mod sleep;
+mod cpu;
+mod tests;
+mod virtio;
+mod memory;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
+
+use crate::mmio::rng::get_rng;
+use crate::mmio::sleep;
+
+use crate::cpu::cpu_exceptions;
+use crate::cpu::gdt;
+
+use crate::virtio::virtqueue::VirtQueue;
 
 global_asm!(include_str!("start.S"));
 
@@ -31,7 +38,7 @@ unsafe fn init() {
 
     init_gdt();
     init_idt();
-    // interrupts::PICS.lock().initialize();
+
     x86_64::instructions::interrupts::enable();
 
     if x86_64::instructions::interrupts::are_enabled() {
@@ -41,40 +48,30 @@ unsafe fn init() {
     }
 }
 
-
 #[no_mangle]
 pub unsafe extern "C" fn not_main() -> ! {
     init();
 
-    println!("IDT is at {:#?}", x86_64::instructions::tables::sidt());
-    println!("Testing a debug breakpoint");
-    x86_64::instructions::interrupts::int3();
+    tests::break_point::test_sidt_breakpoint();
 
-    // println!("Triggering a stack overflow");
-    // fn stack_overflow() {
-    //     stack_overflow(); // for each recursion, the return address is pushed
-    //     volatile::Volatile::new(0).read();
-    // }
+    tests::mmio::test_rng_device();
 
-    // // trigger a stack overflow
-    // stack_overflow();
-    // println!("Past the stack overflow now somehow");
+    println!("Making a new virtio queue!!");
 
-    for _ in 0..10 {
-        println!("Read {} from rng port", rng::get_rng());
+    let virt_queue: VirtQueue<100> = VirtQueue::new_with_size(0x60000);
+
+    println!("VirtQueue looks like: \n {:?}", virt_queue);
+
+    for _ in 0..100 {
+        let rng_pos = get_rng() % 100;
+        let descriptor_cell_one = virt_queue.get_descriptor_from_idx(rng_pos as u16);
+        println!("\n\nFound descriptor_cell: {:?}", descriptor_cell_one);
+
+        mmio::virtio::mmio_write_loc(rng_pos);
+        println!("descriptor_cell after write: {:?}", descriptor_cell_one);
     }
 
-    // println!("Rip is at {:?}", x86_64::instructions::read_rip());
-
-    // println!("Testing invalid location");
-
-
-    // let mmio_location = (0x1264001) as *mut u8;
-    // println!("Found data at: {}", mmio_location.read());
-    // println!("Wrote to invalid location!\n");
-
     loop {
-        crate::sleep::sleep(10);
-        crate::sleep::sleep(11);
+        sleep::sleep(1);
     }
 }

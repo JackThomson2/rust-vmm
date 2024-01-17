@@ -11,6 +11,8 @@ use crate::mmio::handle_mmio;
 use crate::portio::handle_pio;
 use crate::{check_libc, check_libc_no_print};
 
+use crate::virtio::virtqueue::VirtQueue;
+
 use eyre::{eyre, Result};
 
 pub struct Vm {
@@ -264,7 +266,7 @@ impl Vm {
             vcpufd,
             memory_amount,
             run: run as *mut kvm_run,
-            drivers: Default::default(),
+            drivers: Drivers::new_drivers(memory as *mut u8, memory_amount as u64),
         })
     }
 
@@ -293,6 +295,9 @@ impl Vm {
 
     pub unsafe fn run(&mut self) -> Result<()> {
         println!("\n");
+
+        println!("VirtQueue looks like: \n {:?}", self.get_driver_ref().virtio.virtqueue);
+
         let run_ref = self.get_run_ref();
 
         loop {

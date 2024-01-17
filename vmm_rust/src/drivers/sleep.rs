@@ -12,8 +12,6 @@ impl Driver for SleepDevice {
             panic!("Incorrect write length");
         }
 
-        println!("Slot 1 is {}", buffer[0]);
-
         let sleep_time = u64::from_le_bytes(buffer.try_into().expect("Incorrect length"));
         let duration = Duration::from_secs(sleep_time);
         println!("Sleeping for {:#?}", duration);

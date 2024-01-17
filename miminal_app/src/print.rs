@@ -27,6 +27,7 @@ unsafe fn write_str_to_port(string: &str) {
     write_silce_to_mmio_port(MMIO_COM_LOCATION, string.as_bytes());
 }
 
+#[allow(dead_code)]
 unsafe fn write_to_port(port: u16, value: u8) {
     unsafe {
         asm!("out dx, al", in("dx") port, in("al") value, options());

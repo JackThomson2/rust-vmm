@@ -1,3 +1,7 @@
+pub mod rng;
+pub mod sleep;
+pub mod virtio;
+
 #[inline]
 pub unsafe fn write_to_mmio_port(location: usize, data: u8) {
     let ptr = location as *mut u8;
@@ -6,8 +10,8 @@ pub unsafe fn write_to_mmio_port(location: usize, data: u8) {
 
 #[inline]
 pub unsafe fn write_long_to_mmio(location: usize, data: u64) {
-    let data_arr = data.to_ne_bytes();
-    core::ptr::copy(data_arr.as_ptr(), location as *mut u8, data_arr.len());
+    let ptr = location as *mut u64;
+    ptr.write_volatile(data)
 }
 
 pub unsafe fn write_silce_to_mmio_port(location: usize, data: &[u8]) {
