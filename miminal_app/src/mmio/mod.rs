@@ -1,5 +1,6 @@
 pub mod rng;
 pub mod sleep;
+pub mod virtio;
 
 #[inline]
 pub unsafe fn write_to_mmio_port(location: usize, data: u8) {

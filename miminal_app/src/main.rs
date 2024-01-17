@@ -7,14 +7,19 @@ mod print;
 mod mmio;
 mod cpu;
 mod tests;
+mod virtio;
+mod memory;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
 
+use crate::mmio::rng::get_rng;
 use crate::mmio::sleep;
 
 use crate::cpu::cpu_exceptions;
 use crate::cpu::gdt;
+
+use crate::virtio::virtqueue::VirtQueue;
 
 global_asm!(include_str!("start.S"));
 
@@ -43,7 +48,6 @@ unsafe fn init() {
     }
 }
 
-
 #[no_mangle]
 pub unsafe extern "C" fn not_main() -> ! {
     init();
@@ -52,8 +56,22 @@ pub unsafe extern "C" fn not_main() -> ! {
 
     tests::mmio::test_rng_device();
 
+    println!("Making a new virtio queue!!");
+
+    let virt_queue: VirtQueue<100> = VirtQueue::new_with_size(0x60000);
+
+    println!("VirtQueue looks like: \n {:?}", virt_queue);
+
+    for _ in 0..100 {
+        let rng_pos = get_rng() % 100;
+        let descriptor_cell_one = virt_queue.get_descriptor_from_idx(rng_pos as u16);
+        println!("\n\nFound descriptor_cell: {:?}", descriptor_cell_one);
+
+        mmio::virtio::mmio_write_loc(rng_pos);
+        println!("descriptor_cell after write: {:?}", descriptor_cell_one);
+    }
+
     loop {
-        sleep::sleep(1);
         sleep::sleep(1);
     }
 }

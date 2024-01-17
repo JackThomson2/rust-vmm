@@ -11,9 +11,11 @@ const MMAP_COM_END:u64 = MMAP_COM_DEVICE + COM_SIZE - 1;
 const RNG_MMIO_DEVICE:u64 =   0x2000;
 const SLEEP_MMIO_DEVICE:u64 = 0x2001;
 
+const VIRTIO_MMIO_DEVICE:u64 = 0x2002;
+
 unsafe fn get_driver<'d>(run: &mut kvm_run, drivers: &'d mut Drivers, memory: u64) -> Option<&'d mut dyn Driver> {
     let address = run.__bindgen_anon_1.mmio.phys_addr - memory;
-    return match address {
+    match address {
         MMAP_COM_DEVICE..=MMAP_COM_END => {
             Some(&mut drivers.console)
         },
@@ -23,6 +25,9 @@ unsafe fn get_driver<'d>(run: &mut kvm_run, drivers: &'d mut Drivers, memory: u6
         SLEEP_MMIO_DEVICE => {
             Some(&mut drivers.sleep)
         },
+        VIRTIO_MMIO_DEVICE => {
+            Some(&mut drivers.virtio)
+        }
         x => {
             println!("Unkown address {x:0x}");
             None
