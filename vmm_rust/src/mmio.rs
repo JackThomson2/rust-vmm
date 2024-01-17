@@ -3,29 +3,35 @@ use crate::drivers::Driver;
 
 use kvm_bindings::*;
 
-const RNG_MMIO_DEVICE:u32 = 0x2000;
-const MMAP_COM_DEVICE:u32 = 0x8000;
 
-unsafe fn get_driver<'d>(run: &mut kvm_run, drivers: &'d mut Drivers) -> Option<&'d mut dyn Driver> {
-    return match run.__bindgen_anon_1.mmio.phys_addr as u32 {
-        MMAP_COM_DEVICE => {
+const MMAP_COM_DEVICE:u64 = 0x1000;
+const COM_SIZE:u64 = 0x1000;
+const MMAP_COM_END:u64 = MMAP_COM_DEVICE + COM_SIZE - 1;
+
+const RNG_MMIO_DEVICE:u64 =   0x2000;
+const SLEEP_MMIO_DEVICE:u64 = 0x2001;
+
+unsafe fn get_driver<'d>(run: &mut kvm_run, drivers: &'d mut Drivers, memory: u64) -> Option<&'d mut dyn Driver> {
+    let address = run.__bindgen_anon_1.mmio.phys_addr - memory;
+    return match address {
+        MMAP_COM_DEVICE..=MMAP_COM_END => {
             Some(&mut drivers.console)
         },
         RNG_MMIO_DEVICE => {
             Some(&mut drivers.rng)
         },
-        81920..=81930 => {
-            Some(&mut drivers.console)
+        SLEEP_MMIO_DEVICE => {
+            Some(&mut drivers.sleep)
         },
         x => {
-            println!("Unkown address {x}");
+            println!("Unkown address {x:0x}");
             None
         }
     }
 }
 
-pub unsafe fn handle_mmio(run: &mut kvm_run, drivers: &mut Drivers) {
-    let driver = match get_driver(run, drivers) {
+pub unsafe fn handle_mmio(run: &mut kvm_run, drivers: &mut Drivers, memory: u64) {
+    let driver = match get_driver(run, drivers, memory) {
         Some(driver) => { driver},
         None => {
             return;

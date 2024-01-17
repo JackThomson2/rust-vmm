@@ -18,13 +18,5 @@ impl Driver for RngDevice {
 
         random.seek(SeekFrom::Start(self.rng_offset as u64)).expect("Error seeking to offset");
         random.read_exact(buffer).expect("Error filling buffer");
-
-        println!("Read from the buffer the values are: ");
-
-        for b in buffer {
-            println!("{b},")
-        }
-
-        println!("Done reading..")
     }
 }
