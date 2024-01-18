@@ -7,7 +7,6 @@ mod libc_macros;
 mod mmio;
 mod portio;
 mod vm;
-mod virtio;
 
 const MB_ONE: usize = 1024 * 1024 * 1024;
 

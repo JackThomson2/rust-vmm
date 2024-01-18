@@ -11,7 +11,7 @@ use crate::mmio::handle_mmio;
 use crate::portio::handle_pio;
 use crate::{check_libc, check_libc_no_print};
 
-use crate::virtio::virtqueue::VirtQueue;
+use virtio::virtqueue::VirtQueue;
 
 use eyre::{eyre, Result};
 
@@ -295,8 +295,6 @@ impl Vm {
 
     pub unsafe fn run(&mut self) -> Result<()> {
         println!("\n");
-
-        println!("VirtQueue looks like: \n {:?}", self.get_driver_ref().virtio.virtqueue);
 
         let run_ref = self.get_run_ref();
 

@@ -1,11 +1,11 @@
-use std::{io::{Read, Seek, SeekFrom}, convert::TryInto};
+use std::{io::{Read, Seek, SeekFrom}, convert::TryInto, mem::ManuallyDrop, borrow::BorrowMut, ops::DerefMut};
 
 use super::Driver;
 
-use crate::virtio::virtqueue::VirtQueue;
+use virtio::{virtqueue::{VirtQueue, DescriptorCell}, driver::DeviceDriver};
 
 pub struct VirtIODevice {
-    pub virtqueue: VirtQueue<100>
+    pub device_driver: DeviceDriver<128>,
 }
 
 impl VirtIODevice {
@@ -15,22 +15,40 @@ impl VirtIODevice {
         let memory_pos = (memory_loc as usize) + 0x65000;
 
         unsafe {
+            let mut queue = ManuallyDrop::new(VirtQueue::from_memory(memory_pos));
+
             Self {
-                virtqueue: VirtQueue::new_with_size(memory_pos)
+                device_driver: DeviceDriver::new(queue.deref_mut() as *mut _)
             }
+        }
+    }
+
+    unsafe fn check_for_messages(&mut self) {
+        {
+            let queue = self.device_driver.queue.as_mut().unwrap();
+            let available_ring = queue.available.as_mut().unwrap();
+
+            let avail_idx = available_ring.get_idx();
+
+            println!("Available ring: {available_ring:?}. Avail idx: {avail_idx}");
+        }
+
+        if let Some((cell, idx)) = self.device_driver.poll_available_queue() {
+            let cell_ptr = cell as *mut ManuallyDrop<DescriptorCell>;
+
+            let real_cell = cell.as_ref();
+            println!("Idx is {idx}");
+
+            println!("The cell is {real_cell:?}");
         }
     }
 }
 
 impl Driver for VirtIODevice {
     unsafe fn write_to_buffer(&mut self, buffer: &mut [u8]) {
-        if buffer.len() != 8 {
-            panic!("Incorrect write length");
-        }
+        println!("We got a mmio notification for virtio");
 
-        let mmio_loc = u64::from_le_bytes(buffer.try_into().expect("Incorrect length"));
-        let virt_pos = self.virtqueue.get_descriptor_from_idx(mmio_loc as u16);
-        virt_pos.length += 1;
+        self.check_for_messages();
     }
 
     unsafe fn read_to_buffer(&mut self, buffer: &mut [u8]) {
