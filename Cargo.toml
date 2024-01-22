@@ -1,0 +1,11 @@
+[workspace]
+
+members = [
+    "virtio",
+    "vmm_rust",
+]
+exclude = [
+    "miminal_app",
+]
+
+resolver = "2"

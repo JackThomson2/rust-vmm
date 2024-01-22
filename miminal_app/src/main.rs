@@ -7,8 +7,8 @@ mod print;
 mod mmio;
 mod cpu;
 mod tests;
-mod virtio;
 mod memory;
+mod virtio_devices;
 
 use core::arch::global_asm;
 use core::panic::PanicInfo;
@@ -19,7 +19,9 @@ use crate::mmio::sleep;
 use crate::cpu::cpu_exceptions;
 use crate::cpu::gdt;
 
-use crate::virtio::virtqueue::VirtQueue;
+use crate::virtio_devices::blk::BlockVirtioDevice;
+
+use virtio::virtqueue::VirtQueue;
 
 global_asm!(include_str!("start.S"));
 
@@ -58,20 +60,16 @@ pub unsafe extern "C" fn not_main() -> ! {
 
     println!("Making a new virtio queue!!");
 
-    let virt_queue: VirtQueue<100> = VirtQueue::new_with_size(0x60000);
+    let mut virt_queue: VirtQueue<128> = VirtQueue::new_with_size(0x60000);
 
+    let mut block_device = BlockVirtioDevice::new_from_loc((&mut virt_queue) as *mut _);
     println!("VirtQueue looks like: \n {:?}", virt_queue);
 
-    for _ in 0..100 {
-        let rng_pos = get_rng() % 100;
-        let descriptor_cell_one = virt_queue.get_descriptor_from_idx(rng_pos as u16);
-        println!("\n\nFound descriptor_cell: {:?}", descriptor_cell_one);
-
-        mmio::virtio::mmio_write_loc(rng_pos);
-        println!("descriptor_cell after write: {:?}", descriptor_cell_one);
-    }
-
+    let mut idx = 100;
     loop {
-        sleep::sleep(1);
+        block_device.post_message_to_queue(idx);
+        block_device.check_for_messages();
+        sleep::sleep(10);
+        idx += 1;
     }
 }
