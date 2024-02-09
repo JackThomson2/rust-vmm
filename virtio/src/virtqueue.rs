@@ -22,7 +22,6 @@ impl Default for DescriptorCell {
 pub struct Available {
     flags: u16,
     idx: u16,
-    ring: *mut u16
 }
 
 #[repr(C)]
@@ -42,50 +41,52 @@ impl Default for UsedCell {
 pub struct Used {
     pub flags: u16,
     pub idx: u16,
-    pub ring: *mut ManuallyDrop<UsedCell>
+    pub ring: *mut UsedCell
 }
 
+#[repr(C)]
 #[derive(Debug)]
 pub struct VirtQueue<const S: usize> {
-    pub descriptor_cell: *mut ManuallyDrop<DescriptorCell>,
-    pub available: *mut ManuallyDrop<Available>,
+    pub descriptor_cell: *mut DescriptorCell,
+    pub available: *mut Available,
     pub available_ring: *mut u16,
-    pub used: *mut ManuallyDrop<Used>,
+    pub used: *mut Used,
     pub size: u16,
 }
 
-type MemoryRange      = *mut ManuallyDrop<UsedCell>;
-type MemoryDescriptor = *mut ManuallyDrop<DescriptorCell>;
+type MemoryRange      = *mut UsedCell;
+type MemoryDescriptor = *mut DescriptorCell;
 type MemoryAvailable  = *mut u16;
 
 impl Available {
-    pub unsafe fn get_idx(&mut self) -> u16 {
-        let atomic = AtomicU16::from_ptr((&mut self.idx) as *mut u16);
+    pub unsafe fn get_idx(&self) -> u16 {
+        let atomic = AtomicU16::from_ptr((&self.idx) as *const u16 as *mut u16);
 
         atomic.load(core::sync::atomic::Ordering::SeqCst)
     }
 
-    pub unsafe fn increment_idx(&mut self, max_size: u16) {
+    pub unsafe fn increment_idx(&self, max_size: u16) {
         let new_idx = (self.get_idx() + 1) & max_size - 1;
-        let atomic = AtomicU16::from_ptr((&mut self.idx) as *mut u16);
+        let atomic = AtomicU16::from_ptr((&self.idx) as *const u16 as *mut u16);
 
         atomic.store(new_idx, core::sync::atomic::Ordering::SeqCst);
     }
 }
 
 impl Used {
-    pub unsafe fn get_ring_from_idx(&mut self, idx: u16) -> *mut ManuallyDrop<UsedCell> {
+    pub unsafe fn get_ring_from_idx(&self, idx: u16) -> *mut UsedCell {
         self.ring.add(idx as usize)
     }
 
-    pub unsafe fn get_idx(&mut self) -> u16 {
+    pub unsafe fn get_idx(&self) -> u16 {
         (&self.idx as *const u16).read_volatile()
     }
 
-    pub unsafe fn increment_idx(&mut self, max_size: u16) {
+    pub unsafe fn increment_idx(&self, max_size: u16) {
         let new_idx = (self.get_idx() + 1) & max_size - 1;
+        let atomic = AtomicU16::from_ptr((&self.idx) as *const u16 as *mut u16);
 
-        (&mut self.idx as *mut u16).write_volatile(new_idx);
+        atomic.swap(new_idx, core::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -100,19 +101,18 @@ impl<const S: usize> VirtQueue<S> {
         let descript_list_loc = memory_loc as MemoryDescriptor;
         memory_loc = dumb_alloc::build_static_list(descript_list_loc, (0..S).map(|_| Default::default()));
 
-        let used_loc = memory_loc as *mut ManuallyDrop<Used>;
-        memory_loc = dumb_alloc::box_object_volatile(used_loc, ManuallyDrop::new(Used {
+        let used_loc = memory_loc as *mut Used;
+        memory_loc = dumb_alloc::box_object_volatile(used_loc, Used {
             flags: 0,
             idx: 0,
             ring: used_list_loc
-        }));
+        });
 
-        let available_loc = memory_loc as *mut ManuallyDrop<Available>;
-        dumb_alloc::box_object_volatile(available_loc, ManuallyDrop::new(Available {
+        let available_loc = memory_loc as *mut Available;
+        dumb_alloc::box_object_volatile(available_loc, Available {
             flags: 0,
             idx: 0,
-            ring: available_list_loc
-        }));
+        });
 
         Self {
             descriptor_cell: descript_list_loc,
@@ -133,10 +133,10 @@ impl<const S: usize> VirtQueue<S> {
         let descript_list_loc = memory_loc as MemoryDescriptor;
         memory_loc = descript_list_loc.add(S + 1) as usize;
 
-        let used_loc = memory_loc as *mut ManuallyDrop<Used>;
+        let used_loc = memory_loc as *mut Used;
         memory_loc = used_loc.add(1) as usize;
 
-        let available_loc = memory_loc as *mut ManuallyDrop<Available>;
+        let available_loc = memory_loc as *mut Available;
         available_loc.add(1) as usize;
 
         Self {
@@ -148,11 +148,11 @@ impl<const S: usize> VirtQueue<S> {
         }
     }
 
-    pub unsafe fn get_descriptor_from_idx(&self, idx: u16) -> &mut ManuallyDrop<DescriptorCell> {
-        self.descriptor_cell.add(idx as usize).as_mut().unwrap()
+    pub unsafe fn get_descriptor_from_idx(&self, idx: u16) -> *mut DescriptorCell {
+        self.descriptor_cell.add(idx as usize) as *const DescriptorCell as *mut DescriptorCell
     }
 
-    pub unsafe fn get_available_ring_from_idx(&mut self, idx: u16) -> *mut u16 {
+    pub unsafe fn get_available_ring_from_idx(&self, idx: u16) -> *mut u16 {
         self.available_ring.add(idx as usize)
     }
 }

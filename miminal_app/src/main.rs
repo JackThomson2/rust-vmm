@@ -65,11 +65,11 @@ pub unsafe extern "C" fn not_main() -> ! {
     let mut block_device = BlockVirtioDevice::new_from_loc((&mut virt_queue) as *mut _);
     println!("VirtQueue looks like: \n {:?}", virt_queue);
 
-    let mut idx = 100;
+    let mut idx = 1;
     loop {
         block_device.post_message_to_queue(idx);
-        block_device.check_for_messages();
-        sleep::sleep(10);
+        // block_device.check_for_messages();
+        sleep::sleep(1);
         idx += 1;
     }
 }

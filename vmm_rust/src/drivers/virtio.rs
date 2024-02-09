@@ -1,4 +1,4 @@
-use std::{io::{Read, Seek, SeekFrom}, convert::TryInto, mem::ManuallyDrop, borrow::BorrowMut, ops::DerefMut};
+use std::{mem::ManuallyDrop, ops::DerefMut};
 
 use super::Driver;
 
@@ -25,17 +25,19 @@ impl VirtIODevice {
 
     unsafe fn check_for_messages(&mut self) {
         {
-            let queue = self.device_driver.queue.as_mut().unwrap();
-            let available_ring = queue.available.as_mut().unwrap();
+            let queue = self.device_driver.queue.read_volatile();
+            let available_ring = queue.available.read_volatile();
+
+            println!("Queue looks like: {queue:?}");
 
             let avail_idx = available_ring.get_idx();
 
             println!("Available ring: {available_ring:?}. Avail idx: {avail_idx}");
         }
 
-        if let Some((cell, idx)) = self.device_driver.poll_available_queue() {
-            let cell_ptr = cell as *mut ManuallyDrop<DescriptorCell>;
+        println!("Pointer is at {:0X}", self.device_driver.queue as u64);
 
+        if let Some((cell, idx)) = self.device_driver.poll_available_queue() {
             let real_cell = cell.as_ref();
             println!("Idx is {idx}");
 

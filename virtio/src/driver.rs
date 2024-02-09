@@ -1,7 +1,13 @@
-use core::{sync::atomic::{fence, Ordering::{Acquire, Release}}, mem::ManuallyDrop};
+use core::{
+    sync::atomic::{
+        fence,
+        Ordering::{Acquire, Release},
+    },
+};
 
-use super::virtqueue::{VirtQueue, DescriptorCell};
+use super::virtqueue::{DescriptorCell, VirtQueue};
 
+#[repr(C)]
 pub struct DeviceDriver<const S: usize> {
     pub queue: *mut VirtQueue<S>,
 
@@ -21,7 +27,7 @@ impl<const S: usize> DeviceDriver<S> {
         }
 
         Self {
-            queue,
+            queue: queue as _,
             available_index: 0,
 
             descriptor_item_index: S,
@@ -30,11 +36,11 @@ impl<const S: usize> DeviceDriver<S> {
         }
     }
 
-    pub unsafe fn poll_available_queue(&mut self) -> Option<(*mut ManuallyDrop<DescriptorCell>, u16)>{
-        let queue = self.queue.as_mut().unwrap();
-        let available_ring = queue.available.as_mut().unwrap();
-
+    pub unsafe fn poll_available_queue(&mut self) -> Option<(*mut DescriptorCell, u16)> {
         fence(Acquire);
+
+        let queue = self.queue.read_volatile();
+        let available_ring = queue.available.read_volatile();
 
         let ring_idx = available_ring.get_idx();
 
@@ -43,16 +49,21 @@ impl<const S: usize> DeviceDriver<S> {
         }
 
         let loading_idx = self.available_index;
-        let available_ring_pos = queue.get_available_ring_from_idx(loading_idx).read_volatile();
+        let available_ring_pos = queue
+            .get_available_ring_from_idx(loading_idx)
+            .read_volatile();
 
         self.available_index += 1;
 
-        Some((queue.get_descriptor_from_idx(available_ring_pos), available_ring_pos))
+        Some((
+            queue.get_descriptor_from_idx(available_ring_pos),
+            available_ring_pos,
+        ))
     }
 
     pub unsafe fn submit_to_avail_queue(&mut self, idx: u16) {
-        let queue = self.queue.as_mut().unwrap();
-        let available_ring = queue.available.as_mut().unwrap();
+        let queue = self.queue.read_volatile();
+        let available_ring = queue.available.read_volatile();
 
         let ring_cell = queue.get_available_ring_from_idx(self.available_index);
         *ring_cell = idx;
@@ -65,26 +76,27 @@ impl<const S: usize> DeviceDriver<S> {
         self.available_index &= (S as u16) - 1;
     }
 
-    pub unsafe fn get_descriptor_cell(&mut self) -> Option<(*mut ManuallyDrop<DescriptorCell>, u16)> {
+    pub unsafe fn get_descriptor_cell(&mut self) -> Option<(*mut DescriptorCell, u16)> {
         if self.descriptor_item_index == 0 {
             return None;
         }
 
         self.descriptor_item_index -= 1;
 
-        let queue = self.queue.as_mut().unwrap();
+        let queue = self.queue.read_volatile();
         let desc_cell_idx = self.free_descriptor_cells[self.descriptor_item_index];
 
         Some((queue.get_descriptor_from_idx(desc_cell_idx), desc_cell_idx))
     }
 
     pub unsafe fn submit_to_used_queue(&mut self, cell_pos: u16) {
-        let queue = self.queue.as_mut().unwrap();
-        let used_ring = queue.used.as_mut().unwrap();
+        let queue = self.queue.read_volatile();
+        let used_ring = queue.used.read_volatile();
 
-        let ring_cell = used_ring.get_ring_from_idx(self.available_index).as_mut().unwrap();
-        (&mut ring_cell.id as *mut u16).write_volatile(cell_pos);
-
+        let ring_cell = used_ring
+            .get_ring_from_idx(self.available_index)
+            .read_volatile();
+        (&ring_cell.id as *const u16 as *mut u16).write_volatile(cell_pos);
         used_ring.increment_idx(S as u16);
 
         fence(Release);
@@ -93,9 +105,9 @@ impl<const S: usize> DeviceDriver<S> {
         self.free_index &= (S as u16) - 1;
     }
 
-    pub unsafe fn check_used_queue(&mut self) -> Option<(*mut ManuallyDrop<DescriptorCell>, u16)> {
-        let queue = self.queue.as_mut().unwrap();
-        let used = queue.used.as_mut().unwrap();
+    pub unsafe fn check_used_queue(&mut self) -> Option<(*mut DescriptorCell, u16)> {
+        let queue = self.queue.read_volatile();
+        let used = queue.used.read_volatile();
 
         let current_idx = used.get_idx();
 
@@ -107,7 +119,10 @@ impl<const S: usize> DeviceDriver<S> {
         let freed_item = used.get_ring_from_idx(self.free_index).as_ref().unwrap();
         self.free_index += 1;
 
-        Some((queue.get_descriptor_from_idx(freed_item.id) as *mut ManuallyDrop<DescriptorCell>, freed_item.id))
+        Some((
+            queue.get_descriptor_from_idx(freed_item.id) as *mut DescriptorCell,
+            freed_item.id,
+        ))
     }
 
     pub unsafe fn release_back_to_pool(&mut self, idx: u16) {
@@ -115,7 +130,12 @@ impl<const S: usize> DeviceDriver<S> {
         self.descriptor_item_index += 1;
     }
 
-    pub unsafe fn write_pointer_to_queue(&mut self, message: *const u8, length: usize, flag: u16) -> bool {
+    pub unsafe fn write_pointer_to_queue(
+        &mut self,
+        message: *const u8,
+        length: usize,
+        flag: u16,
+    ) -> bool {
         let (cell_ptr, idx) = match self.get_descriptor_cell() {
             Some(res) => res,
             None => return false,
@@ -130,7 +150,7 @@ impl<const S: usize> DeviceDriver<S> {
 
         self.submit_to_avail_queue(idx);
 
-        return true
+        return true;
     }
 }
 
